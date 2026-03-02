@@ -1,0 +1,13 @@
+# Frontend Ignores
+frontend/node_modules/
+frontend/dist/
+        
+
+
+# Backenf Ignores
+backend/venv/
+backend/__pycache__/
+
+# Environment Variables
+.env 
+.DS_Store
