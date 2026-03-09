@@ -14,11 +14,11 @@ import { StudentProgress } from "./components/StudentProgress";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { LMSOverlay } from "./components/LMSOverlay";
 import { LMSSimulator } from "./components/LMSSimulator";
-import {
-  LayoutDashboard,
-  Sparkles,
-  BarChart3,
-  BookOpen,
+import { 
+  LayoutDashboard, 
+  Sparkles, 
+  BarChart3, 
+  BookOpen, 
   ClipboardCheck,
   Bell,
   Settings,
@@ -41,11 +41,11 @@ const students = [
 
 export default function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [userRole, setUserRole] = useState("teacher");
+  const [userRole, setUserRole] = useState<"teacher" | "student">("teacher");
   const [selectedStudentId, setSelectedStudentId] = useState("1");
-  const [viewMode, setViewMode] = useState("platform");
-  const [selectedLMS, setSelectedLMS] = useState("canvas");
-
+  const [viewMode, setViewMode] = useState<"platform" | "lms">("platform");
+  const [selectedLMS, setSelectedLMS] = useState<"canvas" | "moodle" | "classroom">("canvas");
+  
   const selectedStudent = students.find(s => s.id === selectedStudentId) || students[0];
 
   return (
@@ -91,7 +91,7 @@ export default function App() {
 
               {/* LMS Selector - Only shown in LMS view */}
               {viewMode === "lms" && (
-                <Select value={selectedLMS} onValueChange={(value) => setSelectedLMS(value)}>
+                <Select value={selectedLMS} onValueChange={(value: any) => setSelectedLMS(value)}>
                   <SelectTrigger className="w-40">
                     <SelectValue />
                   </SelectTrigger>
@@ -116,8 +116,8 @@ export default function App() {
                         <SelectItem key={student.id} value={student.id}>
                           <div className="flex items-center justify-between w-full gap-3">
                             <span>{student.name}</span>
-                            <Badge
-                              variant={student.risk === "needs-support" ? "destructive" : "outline"}
+                            <Badge 
+                              variant={student.risk === "needs-support" ? "destructive" : "outline"} 
                               className={student.risk === "needs-attention" ? "bg-yellow-50 text-yellow-700" : student.risk === "on-track" ? "bg-green-50 text-green-700" : ""}
                             >
                               {student.successScore}%
