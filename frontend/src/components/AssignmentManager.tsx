@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -5,12 +6,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
 import { Switch } from "./ui/switch";
 import { Label } from "./ui/label";
 import { Send, RefreshCw, CheckCircle2, Clock, BookOpen, ExternalLink } from "lucide-react";
+import { getAssignments } from "../lib/api";
 
 interface Assignment {
   id: string;
   title: string;
   status: "draft" | "pending" | "published" | "synced";
   dueDate: string;
+  createdAt?: string | null;
   class: string;
   students: number;
   submissions: number;
@@ -18,42 +21,30 @@ interface Assignment {
   lmsPlatform: "google" | "canvas" | "moodle";
 }
 
+function formatRelativeTime(isoDate?: string | null) {
+  if (!isoDate) return "recently";
+  const ts = new Date(isoDate).getTime();
+  if (Number.isNaN(ts)) return "recently";
+
+  const diffMinutes = Math.max(0, Math.floor((Date.now() - ts) / 60000));
+  if (diffMinutes < 1) return "just now";
+  if (diffMinutes < 60) return `${diffMinutes} minute${diffMinutes === 1 ? "" : "s"} ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours} hour${diffHours === 1 ? "" : "s"} ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays} day${diffDays === 1 ? "" : "s"} ago`;
+}
+
 export function AssignmentManager() {
-  const assignments: Assignment[] = [
-    {
-      id: "1",
-      title: "Quadratic Equations Practice Set",
-      status: "synced",
-      dueDate: "Nov 20, 2025",
-      class: "Grade 9 Math A",
-      students: 28,
-      submissions: 24,
-      aiGenerated: true,
-      lmsPlatform: "google"
-    },
-    {
-      id: "2",
-      title: "Word Problems Workshop",
-      status: "pending",
-      dueDate: "Nov 22, 2025",
-      class: "Grade 9 Math B",
-      students: 25,
-      submissions: 0,
-      aiGenerated: true,
-      lmsPlatform: "google"
-    },
-    {
-      id: "3",
-      title: "Functions Review Quiz",
-      status: "draft",
-      dueDate: "Nov 25, 2025",
-      class: "Grade 10 Algebra",
-      students: 30,
-      submissions: 0,
-      aiGenerated: false,
-      lmsPlatform: "google"
-    }
-  ];
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+
+  useEffect(() => {
+    getAssignments()
+      .then(data => setAssignments(data))
+      .catch(() => {});
+  }, []);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -167,10 +158,10 @@ export function AssignmentManager() {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 text-sm">
                         <CheckCircle2 className="w-4 h-4 text-green-600" />
-                        <span className="text-gray-700">Last synced: 2 minutes ago</span>
+                        <span className="text-gray-700">Last synced: {formatRelativeTime(assignment.createdAt)}</span>
                       </div>
                       <div className="text-sm text-gray-600">
-                        Grades and feedback will auto-sync every 5 minutes
+                        Grades and feedback sync automatically
                       </div>
                     </div>
                     <div className="flex items-center gap-3">

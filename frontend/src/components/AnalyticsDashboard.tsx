@@ -1,13 +1,14 @@
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
-import { 
-  AlertTriangle, 
-  Send, 
-  TrendingUp, 
-  TrendingDown, 
+import {
+  AlertTriangle,
+  Send,
+  TrendingUp,
+  TrendingDown,
   Info,
   Calendar,
   Clock,
@@ -15,13 +16,13 @@ import {
   Eye,
   BarChart3
 } from "lucide-react";
-import { 
-  ScatterChart, 
-  Scatter, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip as RechartsTooltip, 
+import {
+  ScatterChart,
+  Scatter,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as RechartsTooltip,
   ResponsiveContainer,
   PieChart,
   Pie,
@@ -30,10 +31,9 @@ import {
   Bar,
   LineChart,
   Line,
-  Legend,
-  RadialBarChart,
-  RadialBar
+  Legend
 } from "recharts";
+import { getStudentAnalytics } from "../lib/api";
 
 interface Student {
   id: string;
@@ -43,72 +43,87 @@ interface Student {
 }
 
 interface AnalyticsDashboardProps {
-  student: Student;
+  student?: Student;
+}
+
+interface StudentAnalyticsResponse {
+  successScore?: number;
+  topicMastery?: Array<{ topic: string; mastery: number }>;
+  submissionTimeliness?: Array<{ assignment: string; hoursBeforeDeadline: number; onTime: boolean; label: string }>;
+  studyHeatmap?: Array<{ day: number; weekday: number; intensity: number; date: string }>;
+  engagementBreakdown?: { active: number; passive: number };
+  activePassiveRatio?: number;
+  timeOnTask?: Array<{ week: string; effectiveTime: number; rawTime: number }>;
+  networkCentrality?: number;
+  gradebookAccess?: Array<{ week: string; checks: number }>;
+  consistencyScore?: number;
 }
 
 export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
-  // Mock data for submission timeliness (last 5 assignments)
-  const submissionData = [
-    { assignment: "Quiz 1", hoursBeforeDeadline: 48, onTime: true, label: "48h early" },
-    { assignment: "Essay 1", hoursBeforeDeadline: 2, onTime: true, label: "2h early" },
-    { assignment: "Quiz 2", hoursBeforeDeadline: 0.5, onTime: true, label: "30min early" },
-    { assignment: "Lab Report", hoursBeforeDeadline: -2, onTime: false, label: "2h late" },
-    { assignment: "Midterm Prep", hoursBeforeDeadline: 72, onTime: true, label: "72h early" },
-  ];
+  const [analytics, setAnalytics] = useState<StudentAnalyticsResponse>({});
 
-  // Mock data for study regularity (last 28 days)
-  const studyHeatmapData = Array.from({ length: 28 }, (_, i) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (27 - i));
-    const intensity = Math.random() > 0.3 ? Math.floor(Math.random() * 5) : 0;
-    return {
-      day: date.getDate(),
-      weekday: date.getDay(),
-      intensity,
-      date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    };
-  });
+  useEffect(() => {
+    if (!student?.id) {
+      setAnalytics({});
+      return;
+    }
 
-  // Mock data for active vs passive engagement
+    getStudentAnalytics(student.id)
+      .then((data) => setAnalytics(data || {}))
+      .catch(() => setAnalytics({}));
+  }, [student?.id]);
+
+  const submissionData = analytics.submissionTimeliness || [];
+  const studyHeatmapData = analytics.studyHeatmap || [];
   const engagementData = [
-    { type: "Active", value: 45, label: "Forum Posts, Quizzes, Edits" },
-    { type: "Passive", value: 55, label: "Video Views, PDF Downloads" },
+    {
+      type: "Active",
+      value: analytics.engagementBreakdown?.active ?? 0,
+      label: "Short-answer responses and completed items"
+    },
+    {
+      type: "Passive",
+      value: analytics.engagementBreakdown?.passive ?? 0,
+      label: "Low-interaction activity"
+    }
   ];
-  const COLORS = ['#10b981', '#94a3b8'];
+  const timeOnTaskData = analytics.timeOnTask || [];
+  const gradebookAccessData = analytics.gradebookAccess || [];
+  const consistencyScore = analytics.consistencyScore ?? 0;
+  const activePassiveRatio = analytics.activePassiveRatio ?? 0;
+  const networkCentrality = analytics.networkCentrality ?? 0;
+  const successScore = analytics.successScore ?? student?.successScore ?? 0;
 
-  // Mock data for time-on-task
-  const timeOnTaskData = [
-    { week: "Week 1", effectiveTime: 8.5, rawTime: 12.3 },
-    { week: "Week 2", effectiveTime: 6.2, rawTime: 9.1 },
-    { week: "Week 3", effectiveTime: 4.1, rawTime: 7.8 },
-    { week: "Week 4", effectiveTime: 5.8, rawTime: 8.5 },
-  ];
+  const weakTopics = useMemo(() => {
+    const rows = analytics.topicMastery || [];
+    return rows.filter((row) => row.mastery < 70).slice(0, 3);
+  }, [analytics.topicMastery]);
 
-  // Mock data for social network
-  const networkCentrality = 0.35; // 0-1 scale (0.35 = somewhat isolated)
+  const averageWeeklyChecks = useMemo(() => {
+    if (gradebookAccessData.length === 0) return 0;
+    const total = gradebookAccessData.reduce((sum, row) => sum + row.checks, 0);
+    return +(total / gradebookAccessData.length).toFixed(2);
+  }, [gradebookAccessData]);
 
-  // Mock data for metacognition
-  const gradebookAccessData = [
-    { week: "W1", checks: 3 },
-    { week: "W2", checks: 2 },
-    { week: "W3", checks: 1 },
-    { week: "W4", checks: 1 },
-  ];
+  const effectiveTimeChange = useMemo(() => {
+    if (timeOnTaskData.length < 2) return 0;
+    const first = timeOnTaskData[0].effectiveTime;
+    const last = timeOnTaskData[timeOnTaskData.length - 1].effectiveTime;
+    if (first <= 0) return 0;
+    return Math.round(((last - first) / first) * 100);
+  }, [timeOnTaskData]);
 
   const getRiskColor = (score: number) => {
-    if (score >= 70) return { bg: "bg-green-500", text: "text-green-700", border: "border-green-300" };
-    if (score >= 50) return { bg: "bg-yellow-500", text: "text-yellow-700", border: "border-yellow-300" };
-    return { bg: "bg-red-500", text: "text-red-700", border: "border-red-300" };
+    if (score >= 70) return { text: "text-green-700", border: "border-green-300" };
+    if (score >= 50) return { text: "text-yellow-700", border: "border-yellow-300" };
+    return { text: "text-red-700", border: "border-red-300" };
   };
 
-  const riskColors = getRiskColor(student.successScore);
-
-  const consistencyScore = 62; // 0-100 (Low Entropy = High Consistency)
-  const activePassiveRatio = 45; // % active
+  const riskColors = getRiskColor(successScore);
+  const COLORS = ["#10b981", "#94a3b8"];
 
   return (
     <div className="space-y-6">
-      {/* Hero Section: Early Warning Risk Profile */}
       <Card className={`p-8 border-2 ${riskColors.border}`}>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2">
@@ -120,31 +135,33 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-sm">Success Probability Score</span>
-                  <span className={`text-2xl ${riskColors.text}`}>{student.successScore}%</span>
+                  <span className={`text-2xl ${riskColors.text}`}>{successScore}%</span>
                 </div>
-                <Progress value={student.successScore} className="h-3" />
+                <Progress value={successScore} className="h-3" />
               </div>
               <div className="grid grid-cols-3 gap-4 mt-6">
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                    <span className="text-sm">Academic History</span>
+                    <div className={`w-3 h-3 rounded-full ${successScore < 70 ? "bg-red-500" : "bg-green-500"}`} />
+                    <span className="text-sm">Academic Performance</span>
                   </div>
-                  <p className="text-xs text-gray-600">Below average GPA (2.8)</p>
+                  <p className="text-xs text-gray-600">Current score trend: {successScore}%</p>
                 </div>
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                    <span className="text-sm">Submission Latency</span>
+                    <div className={`w-3 h-3 rounded-full ${submissionData.some((row) => !row.onTime) ? "bg-yellow-500" : "bg-green-500"}`} />
+                    <span className="text-sm">Submission Timeliness</span>
                   </div>
-                  <p className="text-xs text-gray-600">Recent late submissions</p>
+                  <p className="text-xs text-gray-600">
+                    {submissionData.length > 0 ? `${submissionData.filter((row) => row.onTime).length}/${submissionData.length} on time` : "No submissions yet"}
+                  </p>
                 </div>
                 <div className="bg-gray-50 p-4 rounded-lg">
                   <div className="flex items-center gap-2 mb-1">
-                    <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                    <span className="text-sm">Study Regularity</span>
+                    <div className={`w-3 h-3 rounded-full ${weakTopics.length > 0 ? "bg-yellow-500" : "bg-green-500"}`} />
+                    <span className="text-sm">Topic Mastery</span>
                   </div>
-                  <p className="text-xs text-gray-600">Inconsistent patterns</p>
+                  <p className="text-xs text-gray-600">{weakTopics.length > 0 ? `${weakTopics.length} topic(s) need support` : "No weak topics detected"}</p>
                 </div>
               </div>
             </div>
@@ -160,16 +177,12 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
               <Send className="w-4 h-4 mr-2" />
               Send Intervention Nudge
             </Button>
-            <p className="text-xs text-gray-500 text-center mt-3">
-              Personalized message based on behavioral patterns
-            </p>
+            <p className="text-xs text-gray-500 text-center mt-3">Message is generated from observed performance and timing patterns.</p>
           </div>
         </div>
       </Card>
 
-      {/* Row 1: Self-Regulation & Time Management */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Submission Timeliness Tracker */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -182,10 +195,7 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
                   <Info className="w-4 h-4 text-gray-400" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p className="text-sm max-w-xs">
-                    Time gap between submission and deadline. Green = Planning (&gt;24h early), 
-                    Red = Procrastination (&lt;1h before deadline)
-                  </p>
+                  <p className="text-sm max-w-xs">Time gap between submission and due date. Green indicates earlier submissions.</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -193,50 +203,14 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
           <ResponsiveContainer width="100%" height={250}>
             <ScatterChart margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis 
-                type="category" 
-                dataKey="assignment" 
-                name="Assignment"
-                angle={-45}
-                textAnchor="end"
-                height={80}
-              />
-              <YAxis 
-                type="number" 
-                dataKey="hoursBeforeDeadline" 
-                name="Hours Before Deadline"
-                label={{ value: 'Hours Before Deadline', angle: -90, position: 'insideLeft' }}
-              />
-              <RechartsTooltip 
-                cursor={{ strokeDasharray: '3 3' }}
-                content={({ active, payload }) => {
-                  if (active && payload && payload.length) {
-                    const data = payload[0].payload;
-                    return (
-                      <div className="bg-white p-3 border rounded-lg shadow-lg">
-                        <p className="font-semibold">{data.assignment}</p>
-                        <p className="text-sm text-gray-600">{data.label}</p>
-                        <p className="text-xs mt-1">
-                          {data.onTime ? 
-                            <span className="text-green-600">On Time</span> : 
-                            <span className="text-red-600">Late Submission</span>
-                          }
-                        </p>
-                      </div>
-                    );
-                  }
-                  return null;
-                }}
-              />
+              <XAxis type="category" dataKey="assignment" name="Assignment" angle={-45} textAnchor="end" height={90} />
+              <YAxis type="number" dataKey="hoursBeforeDeadline" name="Hours Before Deadline" label={{ value: "Hours Before Deadline", angle: -90, position: "insideLeft" }} />
+              <RechartsTooltip />
               <Scatter data={submissionData} fill="#3b82f6">
                 {submissionData.map((entry, index) => (
-                  <Cell 
-                    key={`cell-${index}`} 
-                    fill={
-                      entry.hoursBeforeDeadline > 24 ? '#10b981' : // Green: >24h early (Planning)
-                      entry.hoursBeforeDeadline < 1 ? '#ef4444' : // Red: <1h before (Procrastination)
-                      '#f59e0b' // Yellow: Between 1-24h
-                    }
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={entry.hoursBeforeDeadline > 24 ? "#10b981" : entry.hoursBeforeDeadline < 1 ? "#ef4444" : "#f59e0b"}
                   />
                 ))}
               </Scatter>
@@ -244,14 +218,21 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
           </ResponsiveContainer>
           <div className="flex items-center justify-between mt-4 pt-4 border-t">
             <div className="flex items-center gap-2">
-              <TrendingDown className="w-4 h-4 text-red-600" />
-              <span className="text-sm">Increasing procrastination pattern</span>
+              {submissionData.some((row) => !row.onTime) ? (
+                <TrendingDown className="w-4 h-4 text-red-600" />
+              ) : (
+                <TrendingUp className="w-4 h-4 text-green-600" />
+              )}
+              <span className="text-sm">
+                {submissionData.some((row) => !row.onTime) ? "Late submission risk detected" : "Submission behavior is on track"}
+              </span>
             </div>
-            <Badge variant="destructive">Alert</Badge>
+            <Badge variant={submissionData.some((row) => !row.onTime) ? "destructive" : "secondary"}>
+              {submissionData.length} tracked
+            </Badge>
           </div>
         </Card>
 
-        {/* Study Regularity Heatmap */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -264,10 +245,7 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
                   <Info className="w-4 h-4 text-gray-400" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p className="text-sm max-w-xs">
-                    Daily login intensity over the past 4 weeks. Green = Distributed Practice, 
-                    Red bursts = Cramming behavior
-                  </p>
+                  <p className="text-sm max-w-xs">Daily intensity derived from student submission activity in the last 4 weeks.</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -275,68 +253,45 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
           <div className="mb-4">
             <div className="flex items-center justify-between">
               <span className="text-sm">Consistency Score</span>
-              <span className={`text-xl ${consistencyScore >= 70 ? 'text-green-600' : consistencyScore >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
+              <span className={`text-xl ${consistencyScore >= 70 ? "text-green-600" : consistencyScore >= 50 ? "text-yellow-600" : "text-red-600"}`}>
                 {consistencyScore}/100
               </span>
             </div>
-            <p className="text-xs text-gray-500 mt-1">Low Entropy = High Consistency</p>
+            <p className="text-xs text-gray-500 mt-1">Higher score means steadier weekly engagement.</p>
           </div>
           <div className="grid grid-cols-7 gap-1">
             {studyHeatmapData.map((day, index) => (
               <TooltipProvider key={index}>
                 <Tooltip>
                   <TooltipTrigger>
-                    <div 
+                    <div
                       className={`aspect-square rounded-sm ${
-                        day.intensity === 0 ? 'bg-gray-100' :
-                        day.intensity === 1 ? 'bg-green-100' :
-                        day.intensity === 2 ? 'bg-green-200' :
-                        day.intensity === 3 ? 'bg-green-400' :
-                        day.intensity === 4 ? 'bg-green-600' :
-                        'bg-red-600'
+                        day.intensity === 0
+                          ? "bg-gray-100"
+                          : day.intensity === 1
+                          ? "bg-green-100"
+                          : day.intensity === 2
+                          ? "bg-green-200"
+                          : day.intensity === 3
+                          ? "bg-green-400"
+                          : day.intensity === 4
+                          ? "bg-green-600"
+                          : "bg-red-600"
                       }`}
                     />
                   </TooltipTrigger>
                   <TooltipContent>
                     <p className="text-xs">{day.date}</p>
-                    <p className="text-xs">
-                      {day.intensity === 0 ? 'No activity' : 
-                       day.intensity >= 4 ? 'High intensity (cramming?)' :
-                       `${day.intensity} sessions`}
-                    </p>
+                    <p className="text-xs">{day.intensity === 0 ? "No activity" : `${day.intensity} activity event(s)`}</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
             ))}
           </div>
-          <div className="flex items-center justify-between mt-4 pt-4 border-t text-xs">
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 bg-gray-100 rounded-sm"></div>
-              <span>None</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 bg-green-200 rounded-sm"></div>
-              <span>Low</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 bg-green-400 rounded-sm"></div>
-              <span>Medium</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 bg-green-600 rounded-sm"></div>
-              <span>High</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <div className="w-3 h-3 bg-red-600 rounded-sm"></div>
-              <span>Cramming</span>
-            </div>
-          </div>
         </Card>
       </div>
 
-      {/* Row 2: Engagement Quality */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Active vs Passive Ratio */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -349,10 +304,7 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
                   <Info className="w-4 h-4 text-gray-400" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p className="text-sm max-w-xs">
-                    Active = Forum Posts, Quizzes, Wiki Edits. 
-                    Passive = Video Views, PDF Downloads
-                  </p>
+                  <p className="text-sm max-w-xs">Estimated from student responses and participation signals in submitted work.</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -360,16 +312,7 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
           <div className="flex items-center justify-center">
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
-                <Pie
-                  data={engagementData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ type, value }) => `${type}: ${value}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
+                <Pie data={engagementData} cx="50%" cy="50%" labelLine={false} label={({ type, value }) => `${type}: ${value}%`} outerRadius={80} dataKey="value">
                   {engagementData.map((entry, index) => (
                     <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                   ))}
@@ -382,7 +325,7 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
             {engagementData.map((item, index) => (
               <div key={index} className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded-full`} style={{ backgroundColor: COLORS[index] }}></div>
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: COLORS[index] }} />
                   <span className="text-sm">{item.type}</span>
                 </div>
                 <span className="text-sm text-gray-600">{item.label}</span>
@@ -391,13 +334,11 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
           </div>
           <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
             <p className="text-sm">
-              <strong>Ratio Alert:</strong> Only {activePassiveRatio}% active engagement. 
-              Recommend more interactive activities.
+              <strong>Ratio Insight:</strong> {activePassiveRatio}% active engagement based on current submissions.
             </p>
           </div>
         </Card>
 
-        {/* Effective Time-on-Task */}
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
@@ -410,9 +351,7 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
                   <Info className="w-4 h-4 text-gray-400" />
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p className="text-sm max-w-xs">
-                    Effective Study Time: Raw time filtered for idle sessions &gt;10 mins
-                  </p>
+                  <p className="text-sm max-w-xs">Estimated weekly effort based on completion depth of submitted answers.</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
@@ -421,7 +360,7 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
             <BarChart data={timeOnTaskData}>
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="week" />
-              <YAxis label={{ value: 'Hours', angle: -90, position: 'insideLeft' }} />
+              <YAxis label={{ value: "Hours", angle: -90, position: "insideLeft" }} />
               <RechartsTooltip />
               <Legend />
               <Bar dataKey="effectiveTime" fill="#10b981" name="Effective Time" />
@@ -430,17 +369,16 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
           </ResponsiveContainer>
           <div className="flex items-center justify-between mt-4 pt-4 border-t">
             <div className="flex items-center gap-2">
-              <TrendingDown className="w-4 h-4 text-red-600" />
-              <span className="text-sm">Declining effective study time</span>
+              {effectiveTimeChange < 0 ? <TrendingDown className="w-4 h-4 text-red-600" /> : <TrendingUp className="w-4 h-4 text-green-600" />}
+              <span className="text-sm">{effectiveTimeChange < 0 ? "Declining" : "Improving"} effective study time</span>
             </div>
-            <Badge variant="outline" className="bg-red-50 text-red-700 border-red-300">
-              -40% from Week 1
+            <Badge variant="outline" className={effectiveTimeChange < 0 ? "bg-red-50 text-red-700 border-red-300" : "bg-green-50 text-green-700 border-green-300"}>
+              {effectiveTimeChange >= 0 ? `+${effectiveTimeChange}%` : `${effectiveTimeChange}%`}
             </Badge>
           </div>
         </Card>
       </div>
 
-      {/* Row 3: Metacognitive */}
       <Card className="p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -453,10 +391,7 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
                 <Info className="w-4 h-4 text-gray-400" />
               </TooltipTrigger>
               <TooltipContent>
-                <p className="text-sm max-w-xs">
-                  How often does the student check their own progress? 
-                  Tracks gradebook access frequency.
-                </p>
+                <p className="text-sm max-w-xs">Weekly progress-check behavior plus a social engagement centrality estimate.</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -465,26 +400,23 @@ export function AnalyticsDashboard({ student }: AnalyticsDashboardProps) {
           <LineChart data={gradebookAccessData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="week" />
-            <YAxis label={{ value: 'Access Count', angle: -90, position: 'insideLeft' }} />
+            <YAxis label={{ value: "Access Count", angle: -90, position: "insideLeft" }} />
             <RechartsTooltip />
-            <Line 
-              type="monotone" 
-              dataKey="checks" 
-              stroke="#3b82f6" 
-              strokeWidth={2}
-              dot={{ fill: '#3b82f6', r: 4 }}
-            />
+            <Line type="monotone" dataKey="checks" stroke="#3b82f6" strokeWidth={2} dot={{ fill: "#3b82f6", r: 4 }} />
           </LineChart>
         </ResponsiveContainer>
         <div className="mt-4 pt-4 border-t space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm">Average Weekly Checks</span>
-            <span className="text-red-600">1.75</span>
+            <span className="text-red-600">{averageWeeklyChecks}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-sm">Network Centrality</span>
+            <span className="text-gray-700">{networkCentrality}</span>
           </div>
           <div className="p-3 bg-yellow-50 rounded-lg">
             <p className="text-sm">
-              <strong>Low Self-Monitoring:</strong> Declining gradebook access suggests 
-              reduced metacognitive awareness. Recommended: Progress check-in prompts.
+              <strong>Monitoring Insight:</strong> The student averages {averageWeeklyChecks} progress checks per week.
             </p>
           </div>
         </div>

@@ -1,8 +1,10 @@
+import { useState, useEffect } from "react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { BookOpen, Clock, CheckCircle2, TrendingUp, Target, Star, AlertCircle } from "lucide-react";
+import { getAssignments, getMySubmissions, getMyProgress } from "../lib/api";
 
 interface Assignment {
   id: string;
@@ -22,58 +24,82 @@ interface LearningGoal {
 }
 
 export function StudentDashboard() {
-  const assignments: Assignment[] = [
-    {
-      id: "1",
-      title: "Quadratic Equations Practice",
-      subject: "Math",
-      dueDate: "Tomorrow",
-      status: "in-progress",
-      isPersonalized: true,
-      difficulty: "medium"
-    },
-    {
-      id: "2",
-      title: "Word Problems Workshop",
-      subject: "Math",
-      dueDate: "Nov 22",
-      status: "not-started",
-      isPersonalized: true,
-      difficulty: "hard"
-    },
-    {
-      id: "3",
-      title: "Functions Review Quiz",
-      subject: "Math",
-      dueDate: "Nov 25",
-      status: "submitted",
-      score: 92,
-      isPersonalized: false,
-      difficulty: "medium"
-    }
-  ];
+  const [assignments, setAssignments] = useState<Assignment[]>([]);
+  const [learningGoals, setLearningGoals] = useState<LearningGoal[]>([]);
+  const [recommendedPractice, setRecommendedPractice] = useState<Array<{
+    title: string;
+    description: string;
+    questions: number;
+    estimatedTime: string;
+  }>>([]);
+  const [userName, setUserName] = useState("there");
+  const [activeAssignments, setActiveAssignments] = useState(0);
+  const [averageScore, setAverageScore] = useState(0);
+  const [weeklyChange, setWeeklyChange] = useState(0);
 
-  const learningGoals: LearningGoal[] = [
-    { topic: "Linear Equations", progress: 95, status: "mastered" },
-    { topic: "Quadratic Equations", progress: 68, status: "progressing" },
-    { topic: "Word Problems", progress: 45, status: "struggling" },
-    { topic: "Functions", progress: 82, status: "progressing" },
-  ];
+  useEffect(() => {
+    Promise.all([getAssignments(), getMyProgress(), getMySubmissions()])
+      .then(([assignData, progressData, submissionData]) => {
+        const submissions = Array.isArray(submissionData) ? submissionData : [];
+        const scores = submissions
+          .map((s: any) => Number(s.score))
+          .filter((score: number) => Number.isFinite(score));
+        const submissionByAssignment = new Map(
+          submissions.map((s: any) => [String(s.assignmentId), Number(s.score)])
+        );
 
-  const recommendedPractice = [
-    {
-      title: "Word Problem Strategies",
-      description: "Personalized practice based on your recent work",
-      questions: 8,
-      estimatedTime: "15 min"
-    },
-    {
-      title: "Quadratic Formula Review",
-      description: "Focus on areas where you need more practice",
-      questions: 5,
-      estimatedTime: "10 min"
-    }
-  ];
+        const assignmentRows = (Array.isArray(assignData) ? assignData : []).slice(0, 5).map((a: any) => {
+          const submissionScore = submissionByAssignment.get(String(a.id));
+          return {
+            id: String(a.id),
+            title: a.title,
+            subject: a.class || "General",
+            dueDate: a.dueDate,
+            status: Number.isFinite(submissionScore) ? "submitted" : "not-started",
+            score: Number.isFinite(submissionScore) ? Math.round(submissionScore) : undefined,
+            isPersonalized: Boolean(a.aiGenerated),
+            difficulty: "medium" as const,
+          };
+        });
+
+        setAssignments(assignmentRows);
+        setActiveAssignments(assignmentRows.filter((a) => a.status !== "submitted").length);
+        setAverageScore(scores.length ? Math.round(scores.reduce((sum, s) => sum + s, 0) / scores.length) : 0);
+
+        const sortedSubmissions = [...submissions]
+          .filter((s: any) => s.submittedAt)
+          .sort((a: any, b: any) => new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime());
+        if (sortedSubmissions.length >= 2) {
+          const last = Number(sortedSubmissions[sortedSubmissions.length - 1].score || 0);
+          const prev = Number(sortedSubmissions[sortedSubmissions.length - 2].score || 0);
+          setWeeklyChange(Math.round(last - prev));
+        } else {
+          setWeeklyChange(0);
+        }
+
+        const topicMastery = Array.isArray(progressData?.topicMastery) ? progressData.topicMastery : [];
+        const goals = topicMastery.map((t: any) => ({
+          topic: t.topic,
+          progress: Math.round(Number(t.mastery || 0)),
+          status: Number(t.mastery) >= 80 ? "mastered" : Number(t.mastery) >= 60 ? "progressing" : "struggling",
+        }));
+        setLearningGoals(goals);
+
+        const practice = [...topicMastery]
+          .sort((a: any, b: any) => Number(a.mastery || 0) - Number(b.mastery || 0))
+          .slice(0, 2)
+          .map((topic: any, index: number) => ({
+            title: `${topic.topic} Practice`,
+            description: `Targeted review to improve your ${topic.topic.toLowerCase()} mastery`,
+            questions: Math.max(5, 10 - index * 2),
+            estimatedTime: `${10 + index * 5} min`,
+          }));
+        setRecommendedPractice(practice);
+
+        if (progressData?.name) setUserName(String(progressData.name).split(" ")[0]);
+      })
+      .catch(() => {});
+  }, []);
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -109,7 +135,7 @@ export function StudentDashboard() {
     <div className="space-y-6">
       {/* Welcome Section */}
       <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-2xl p-8">
-        <h2 className="text-3xl mb-2">Welcome back, Emma! 👋</h2>
+        <h2 className="text-3xl mb-2">Welcome back, {userName}! 👋</h2>
         <p className="text-blue-100 mb-6">You're making great progress this week. Keep it up!</p>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card className="p-4 bg-white/10 backdrop-blur-sm border-white/20">
@@ -118,7 +144,7 @@ export function StudentDashboard() {
                 <Target className="w-6 h-6 text-white" />
               </div>
               <div>
-                <p className="text-2xl">3</p>
+                <p className="text-2xl">{activeAssignments}</p>
                 <p className="text-sm text-blue-100">Active Assignments</p>
               </div>
             </div>
@@ -129,7 +155,7 @@ export function StudentDashboard() {
                 <Star className="w-6 h-6 text-white" />
               </div>
               <div>
-                <p className="text-2xl">92%</p>
+                <p className="text-2xl">{averageScore}%</p>
                 <p className="text-sm text-blue-100">Average Score</p>
               </div>
             </div>
@@ -140,7 +166,7 @@ export function StudentDashboard() {
                 <TrendingUp className="w-6 h-6 text-white" />
               </div>
               <div>
-                <p className="text-2xl">+12%</p>
+                <p className="text-2xl">{weeklyChange >= 0 ? `+${weeklyChange}` : `${weeklyChange}`}%</p>
                 <p className="text-sm text-blue-100">This Week</p>
               </div>
             </div>
@@ -222,6 +248,11 @@ export function StudentDashboard() {
                   </div>
                 </Card>
               ))}
+              {recommendedPractice.length === 0 && (
+                <Card className="p-4 bg-white border-purple-200">
+                  <p className="text-sm text-gray-600">Complete an assignment to unlock personalized practice recommendations.</p>
+                </Card>
+              )}
             </div>
           </Card>
         </div>

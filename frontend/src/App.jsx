@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./components/ui/tabs";
 import { Button } from "./components/ui/button";
 import { Badge } from "./components/ui/badge";
@@ -14,6 +14,9 @@ import { StudentProgress } from "./components/StudentProgress";
 import { AnalyticsDashboard } from "./components/AnalyticsDashboard";
 import { LMSOverlay } from "./components/LMSOverlay";
 import { LMSSimulator } from "./components/LMSSimulator";
+import LoginPage from "./components/LoginPage";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { getStudents, getClassAnalytics, getAssignments } from "./lib/api";
 import {
   LayoutDashboard,
   Sparkles,
@@ -26,32 +29,75 @@ import {
   GraduationCap,
   Users,
   TrendingUp,
-  Layers
+  Layers,
+  LogOut
 } from "lucide-react";
 
-// Mock student data for analytics
-const students = [
-  { id: "1", name: "Emma Chen", risk: "needs-support", successScore: 42 },
-  { id: "2", name: "Marcus Johnson", risk: "needs-attention", successScore: 67 },
-  { id: "3", name: "Sarah Kim", risk: "on-track", successScore: 89 },
-  { id: "4", name: "David Park", risk: "needs-attention", successScore: 71 },
-  { id: "5", name: "Lisa Wang", risk: "on-track", successScore: 92 },
-  { id: "6", name: "Alex Rodriguez", risk: "needs-support", successScore: 38 },
-];
-
-export default function App() {
+function AppShell() {
+  const { user, logout, loading } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [userRole, setUserRole] = useState("teacher");
-  const [selectedStudentId, setSelectedStudentId] = useState("1");
+  const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [viewMode, setViewMode] = useState("platform");
   const [selectedLMS, setSelectedLMS] = useState("canvas");
+  const [students, setStudents] = useState([]);
+  const [notificationCount, setNotificationCount] = useState(0);
+  const [pendingReviewCount, setPendingReviewCount] = useState(0);
 
-  const selectedStudent = students.find(s => s.id === selectedStudentId) || students[0];
+  // Derive role from JWT user
+  const userRole = user?.role || "student";
+
+  useEffect(() => {
+    if (loading || !user) {
+      return;
+    }
+
+    if (userRole === "teacher") {
+      getStudents()
+        .then(data => {
+          setStudents(data);
+          if (data.length > 0 && !selectedStudentId) setSelectedStudentId(String(data[0].id));
+        })
+        .catch(() => {});
+
+      getClassAnalytics()
+        .then(data => {
+          const pending = Number(data?.quickStats?.pendingReviews || 0);
+          setPendingReviewCount(pending);
+          setNotificationCount(pending);
+        })
+        .catch(() => {
+          setPendingReviewCount(0);
+          setNotificationCount(0);
+        });
+    } else {
+      getAssignments()
+        .then(data => setNotificationCount(Array.isArray(data) ? data.length : 0))
+        .catch(() => setNotificationCount(0));
+    }
+  }, [loading, user, userRole, selectedStudentId]);
+
+  // Keep tab in sync when role changes
+  useEffect(() => {
+    if (userRole === "teacher" && !["dashboard","student-analytics","class-insights","ai-generator","assignments","review"].includes(activeTab)) {
+      setActiveTab("dashboard");
+    } else if (userRole === "student" && !["student-dashboard","student-assignment","student-progress"].includes(activeTab)) {
+      setActiveTab("student-dashboard");
+    }
+  }, [userRole]);
+
+  if (loading) {
+    return <div className="min-h-screen flex items-center justify-center">Loading…</div>;
+  }
+
+  if (!user) return <LoginPage />;
+
+  const selectedStudent = students.find(s => String(s.id) === selectedStudentId) || students[0];
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
       <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
+
         <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
@@ -107,22 +153,14 @@ export default function App() {
               {viewMode === "platform" && userRole === "teacher" && activeTab === "student-analytics" && (
                 <div className="flex items-center gap-2">
                   <GraduationCap className="w-4 h-4 text-gray-500" />
-                  <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
+                  <Select value={selectedStudentId || ""} onValueChange={setSelectedStudentId}>
                     <SelectTrigger className="w-48">
-                      <SelectValue />
+                      <SelectValue placeholder="Select student" />
                     </SelectTrigger>
                     <SelectContent>
                       {students.map(student => (
-                        <SelectItem key={student.id} value={student.id}>
-                          <div className="flex items-center justify-between w-full gap-3">
-                            <span>{student.name}</span>
-                            <Badge
-                              variant={student.risk === "needs-support" ? "destructive" : "outline"}
-                              className={student.risk === "needs-attention" ? "bg-yellow-50 text-yellow-700" : student.risk === "on-track" ? "bg-green-50 text-green-700" : ""}
-                            >
-                              {student.successScore}%
-                            </Badge>
-                          </div>
+                        <SelectItem key={student.id} value={String(student.id)}>
+                          {student.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -130,51 +168,22 @@ export default function App() {
                 </div>
               )}
 
-              {/* View Switcher */}
-              {viewMode === "platform" && (
-                <div className="flex items-center gap-2 bg-gray-100 rounded-lg p-1">
-                  <Button
-                    variant={userRole === "teacher" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => {
-                      setUserRole("teacher");
-                      setActiveTab("dashboard");
-                    }}
-                    className="h-8"
-                  >
-                    <Users className="w-4 h-4 mr-1" />
-                    Teacher
-                  </Button>
-                  <Button
-                    variant={userRole === "student" ? "default" : "ghost"}
-                    size="sm"
-                    onClick={() => {
-                      setUserRole("student");
-                      setActiveTab("student-dashboard");
-                    }}
-                    className="h-8"
-                  >
-                    <GraduationCap className="w-4 h-4 mr-1" />
-                    Student
-                  </Button>
-                </div>
-              )}
 
               <Button variant="ghost" size="sm" className="relative">
                 <Bell className="w-5 h-5" />
                 <Badge className="absolute -top-1 -right-1 w-5 h-5 p-0 flex items-center justify-center bg-red-600 text-xs">
-                  {userRole === "teacher" ? "5" : "2"}
+                  {notificationCount}
                 </Badge>
               </Button>
-              <Button variant="ghost" size="sm">
-                <Settings className="w-5 h-5" />
+              <Button variant="ghost" size="sm" onClick={logout} title="Sign out">
+                <LogOut className="w-5 h-5" />
               </Button>
               <div className="flex items-center gap-2 border-l pl-4">
                 <div className={`w-8 h-8 ${userRole === "teacher" ? "bg-blue-600" : "bg-purple-600"} rounded-full flex items-center justify-center`}>
                   <User className="w-4 h-4 text-white" />
                 </div>
                 <div className="text-sm">
-                  <p>{userRole === "teacher" ? "Dr. Martinez" : "Emma Chen"}</p>
+                  <p>{user?.name || (userRole === "teacher" ? "Teacher" : "Student")}</p>
                   <p className="text-xs text-gray-500">{userRole === "teacher" ? "Teacher" : "Student"}</p>
                 </div>
               </div>
@@ -225,7 +234,7 @@ export default function App() {
                   <TabsTrigger value="review" className="flex items-center gap-2">
                     <ClipboardCheck className="w-4 h-4" />
                     Review Queue
-                    <Badge className="bg-yellow-600">12</Badge>
+                    <Badge className="bg-yellow-600">{pendingReviewCount}</Badge>
                   </TabsTrigger>
                 </TabsList>
 
@@ -359,5 +368,13 @@ export default function App() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
   );
 }

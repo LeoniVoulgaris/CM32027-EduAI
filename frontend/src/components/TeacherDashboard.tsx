@@ -1,8 +1,10 @@
+import { useState, useEffect } from "react";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
 import { AlertTriangle, TrendingUp, Users, BookOpen, Clock, CheckCircle2, ChevronDown, Edit } from "lucide-react";
+import { getClassAnalytics } from "../lib/api";
 
 interface ClassOverview {
   className: string;
@@ -34,42 +36,32 @@ interface StudentAlert {
 }
 
 export function TeacherDashboard() {
-  const classes: ClassOverview[] = [
-    { className: "Grade 9 Math A", totalStudents: 28, averageScore: 82, trend: "up", atRiskStudents: 3 },
-    { className: "Grade 9 Math B", totalStudents: 25, averageScore: 76, trend: "down", atRiskStudents: 5 },
-    { className: "Grade 10 Algebra", totalStudents: 30, averageScore: 88, trend: "up", atRiskStudents: 2 },
-  ];
+  const [classes, setClasses] = useState<ClassOverview[]>([]);
+  const [quickStats, setQuickStats] = useState<QuickStat[]>([
+    { label: "Total Students", value: "—", icon: <Users className="w-5 h-5" />, trend: "neutral" },
+    { label: "Pending Reviews", value: "—", icon: <Clock className="w-5 h-5" />, trend: "neutral" },
+    { label: "Assignments Due", value: "—", icon: <BookOpen className="w-5 h-5" />, trend: "neutral" },
+    { label: "Completed This Week", value: "—", icon: <CheckCircle2 className="w-5 h-5" />, trend: "positive" },
+  ]);
+  const [studentAlerts, setStudentAlerts] = useState<StudentAlert[]>([]);
 
-  const quickStats: QuickStat[] = [
-    { label: "Total Students", value: 83, icon: <Users className="w-5 h-5" />, trend: "neutral" },
-    { label: "Pending Reviews", value: 12, icon: <Clock className="w-5 h-5" />, trend: "neutral" },
-    { label: "Assignments Due", value: 5, icon: <BookOpen className="w-5 h-5" />, trend: "neutral" },
-    { label: "Completed This Week", value: 24, icon: <CheckCircle2 className="w-5 h-5" />, trend: "positive" },
-  ];
-
-  const studentAlerts: StudentAlert[] = [
-    {
-      name: "Emma Chen",
-      class: "Grade 9 Math B",
-      label: "needs-support",
-      reasons: ["Declining test scores over 3 assessments", "Low homework completion rate", "Missing key concepts in recent work"],
-      metrics: {
-        testScores: "72% → 58% → 51%",
-        homeworkCompletion: "40% last week",
-        engagement: "Below average time on task"
-      }
-    },
-    {
-      name: "Marcus Johnson",
-      class: "Grade 9 Math A",
-      label: "needs-attention",
-      reasons: ["Struggling with specific topic (Quadratic Equations)", "3 consecutive low scores on this topic"],
-      metrics: {
-        testScores: "55% on last 3 quadratic problems",
-        engagement: "Asked for help twice this week"
-      }
-    }
-  ];
+  useEffect(() => {
+    getClassAnalytics()
+      .then(data => {
+        if (data.classes) setClasses(data.classes);
+        if (data.quickStats) {
+          const qs = data.quickStats;
+          setQuickStats(prev => [
+            { ...prev[0], value: qs.totalStudents ?? prev[0].value },
+            { ...prev[1], value: qs.pendingReviews ?? prev[1].value },
+            { ...prev[2], value: qs.assignmentsDue ?? prev[2].value },
+            { ...prev[3], value: qs.completedThisWeek ?? prev[3].value },
+          ]);
+        }
+        if (data.studentAlerts) setStudentAlerts(data.studentAlerts);
+      })
+      .catch(() => {});
+  }, []);
 
   const getSupportLabelBadge = (label: "needs-support" | "needs-attention" | "on-track") => {
     const config = {
@@ -148,7 +140,7 @@ export function TeacherDashboard() {
                               ))}
                             </ul>
                           </div>
-                          
+
                           <div>
                             <p className="text-sm mb-2">
                               <strong className="text-gray-900">Performance Metrics:</strong>
@@ -197,7 +189,7 @@ export function TeacherDashboard() {
                     <TrendingUp className="w-5 h-5 text-green-600" />
                   )}
                 </div>
-                
+
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">Students</span>

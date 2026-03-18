@@ -1,17 +1,18 @@
+import { useState, useEffect } from "react";
 import { Card } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { 
-  LineChart, 
-  Line, 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
   ResponsiveContainer,
   RadarChart,
   PolarGrid,
@@ -20,6 +21,17 @@ import {
   Radar
 } from "recharts";
 import { TrendingUp, Award, Target, Star, CheckCircle2, Zap } from "lucide-react";
+import { getMyProgress, getMySubmissions } from "../lib/api";
+
+interface WeeklyScore {
+  week: string;
+  score: number;
+}
+
+interface TopicMastery {
+  topic: string;
+  mastery: number;
+}
 
 interface Achievement {
   id: string;
@@ -30,74 +42,75 @@ interface Achievement {
 }
 
 export function StudentProgress() {
-  const weeklyScores = [
-    { week: "Week 1", score: 75 },
-    { week: "Week 2", score: 78 },
-    { week: "Week 3", score: 82 },
-    { week: "Week 4", score: 79 },
-    { week: "Week 5", score: 88 },
-    { week: "Week 6", score: 92 },
-  ];
+  const [weeklyScores, setWeeklyScores] = useState<WeeklyScore[]>([]);
+  const [topicMastery, setTopicMastery] = useState<TopicMastery[]>([]);
+  const [achievements, setAchievements] = useState<Achievement[]>([]);
+  const [currentAvg, setCurrentAvg] = useState(0);
+  const [assignmentsDone, setAssignmentsDone] = useState(0);
 
-  const topicMastery = [
-    { topic: "Linear\nEquations", mastery: 95 },
-    { topic: "Quadratic\nEquations", mastery: 68 },
-    { topic: "Word\nProblems", mastery: 45 },
-    { topic: "Functions", mastery: 82 },
-    { topic: "Graphing", mastery: 88 },
-  ];
+  useEffect(() => {
+    Promise.all([getMyProgress(), getMySubmissions()])
+      .then(([progressData, submissionsData]) => {
+        const weekly = Array.isArray(progressData?.weeklyScores)
+          ? progressData.weeklyScores
+              .map((item: any) => ({
+                week: String(item.week || ""),
+                score: Math.max(0, Math.min(100, Number(item.score || 0))),
+              }))
+              .filter((item: WeeklyScore) => item.week)
+          : [];
 
-  const skillRadar = [
-    { skill: "Problem Solving", current: 85, target: 90 },
-    { skill: "Calculations", current: 92, target: 95 },
-    { skill: "Word Problems", current: 65, target: 80 },
-    { skill: "Graphing", current: 88, target: 90 },
-    { skill: "Conceptual Understanding", current: 80, target: 85 },
-  ];
+        const mastery = Array.isArray(progressData?.topicMastery)
+          ? progressData.topicMastery
+              .map((item: any) => ({
+                topic: String(item.topic || "Unknown Topic"),
+                mastery: Math.max(0, Math.min(100, Number(item.mastery || 0))),
+              }))
+              .filter((item: TopicMastery) => item.topic)
+          : [];
 
-  const achievements: Achievement[] = [
-    {
-      id: "1",
-      title: "Perfect Score",
-      description: "Scored 100% on an assignment",
-      earnedDate: "Nov 10, 2025",
-      icon: "🏆"
-    },
-    {
-      id: "2",
-      title: "Week Streak",
-      description: "Completed all assignments for 3 weeks",
-      earnedDate: "Nov 15, 2025",
-      icon: "🔥"
-    },
-    {
-      id: "3",
-      title: "Fast Learner",
-      description: "Improved score by 15% in one week",
-      earnedDate: "Nov 8, 2025",
-      icon: "⚡"
-    },
-    {
-      id: "4",
-      title: "Topic Master",
-      description: "Achieved 90%+ mastery in Linear Equations",
-      earnedDate: "Nov 5, 2025",
-      icon: "⭐"
-    }
-  ];
+        setWeeklyScores(weekly);
+        setTopicMastery(mastery);
+        setAchievements(Array.isArray(progressData?.achievements) ? progressData.achievements : []);
 
+        const successScore = Number(progressData?.successScore);
+        if (Number.isFinite(successScore)) {
+          setCurrentAvg(Math.round(successScore));
+        } else if (weekly.length > 0) {
+          const avg = weekly.reduce((sum, item) => sum + item.score, 0) / weekly.length;
+          setCurrentAvg(Math.round(avg));
+        } else {
+          setCurrentAvg(0);
+        }
+
+        const submissions = Array.isArray(submissionsData) ? submissionsData : [];
+        setAssignmentsDone(submissions.length);
+      })
+      .catch(() => {});
+  }, []);
+
+  const skillRadar = topicMastery.map(item => ({
+    skill: item.topic.replace(/\n/g, ' '),
+    current: item.mastery,
+    target: Math.min(item.mastery + 15, 100),
+  }));
+
+  const sortedByMastery = [...topicMastery].sort((a, b) => b.mastery - a.mastery);
   const strengthsAndWeaknesses = {
-    strengths: [
-      { skill: "Linear Equations", score: 95 },
-      { skill: "Calculations", score: 92 },
-      { skill: "Graphing", score: 88 }
-    ],
-    needsPractice: [
-      { skill: "Word Problems", score: 45 },
-      { skill: "Quadratic Equations", score: 68 },
-      { skill: "Problem Setup", score: 58 }
-    ]
+    strengths: sortedByMastery.slice(0, 3).map(item => ({ skill: item.topic, score: item.mastery })),
+    needsPractice: [...sortedByMastery]
+      .reverse()
+      .slice(0, 3)
+      .map(item => ({ skill: item.topic, score: item.mastery }))
   };
+
+  const weakestTopic = strengthsAndWeaknesses.needsPractice[0]?.skill;
+  const improvement = weeklyScores.length >= 2 ? weeklyScores[weeklyScores.length - 1].score - weeklyScores[0].score : 0;
+  const masteredTopics = topicMastery.filter(topic => topic.mastery >= 90).length;
+  const topicExpertTarget = 3;
+  const submissionTarget = 10;
+  const submissionProgress = Math.min((assignmentsDone / submissionTarget) * 100, 100);
+  const topicExpertProgress = Math.min((masteredTopics / topicExpertTarget) * 100, 100);
 
   return (
     <div className="space-y-6">
@@ -108,49 +121,49 @@ export function StudentProgress() {
 
       {/* Overview Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="p-4 bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+        <Card className="p-4 bg-linear-to-br from-blue-500 to-blue-600 text-white">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
               <TrendingUp className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-2xl">92%</p>
+              <p className="text-2xl">{currentAvg}%</p>
               <p className="text-sm text-blue-100">Current Average</p>
             </div>
           </div>
         </Card>
 
-        <Card className="p-4 bg-gradient-to-br from-green-500 to-green-600 text-white">
+        <Card className="p-4 bg-linear-to-br from-green-500 to-green-600 text-white">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
               <CheckCircle2 className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-2xl">24</p>
+              <p className="text-2xl">{assignmentsDone}</p>
               <p className="text-sm text-green-100">Assignments Done</p>
             </div>
           </div>
         </Card>
 
-        <Card className="p-4 bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+        <Card className="p-4 bg-linear-to-br from-purple-500 to-purple-600 text-white">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
               <Award className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-2xl">4</p>
+              <p className="text-2xl">{achievements.length}</p>
               <p className="text-sm text-purple-100">Achievements</p>
             </div>
           </div>
         </Card>
 
-        <Card className="p-4 bg-gradient-to-br from-orange-500 to-orange-600 text-white">
+        <Card className="p-4 bg-linear-to-br from-orange-500 to-orange-600 text-white">
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center">
               <Zap className="w-5 h-5" />
             </div>
             <div>
-              <p className="text-2xl">+12%</p>
+              <p className="text-2xl">{improvement >= 0 ? `+${improvement}%` : `${improvement}%`}</p>
               <p className="text-sm text-orange-100">Improvement</p>
             </div>
           </div>
@@ -175,22 +188,26 @@ export function StudentProgress() {
                   <YAxis domain={[0, 100]} />
                   <Tooltip />
                   <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="score" 
-                    stroke="#3b82f6" 
-                    strokeWidth={3} 
+                  <Line
+                    type="monotone"
+                    dataKey="score"
+                    stroke="#3b82f6"
+                    strokeWidth={3}
                     name="Your Score"
                     dot={{ fill: '#3b82f6', r: 5 }}
                   />
                 </LineChart>
               </ResponsiveContainer>
-              <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
-                <p className="text-sm text-green-800">
-                  <TrendingUp className="w-4 h-4 inline mr-1" />
-                  Great progress! You've improved by 17 points in 6 weeks!
-                </p>
-              </div>
+              {weeklyScores.length >= 2 && (
+                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-800">
+                    <TrendingUp className="w-4 h-4 inline mr-1" />
+                    {improvement >= 0
+                      ? `Great progress! You've improved by ${improvement} points over ${weeklyScores.length} weeks.`
+                      : `You're currently ${Math.abs(improvement)} points below your first recorded week. Keep practicing to bounce back.`}
+                  </p>
+                </div>
+              )}
             </Card>
 
             <Card className="p-6">
@@ -204,12 +221,14 @@ export function StudentProgress() {
                   <Bar dataKey="mastery" fill="#8b5cf6" />
                 </BarChart>
               </ResponsiveContainer>
-              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-800">
-                  <Target className="w-4 h-4 inline mr-1" />
-                  Focus on Word Problems to improve your overall score!
-                </p>
-              </div>
+              {weakestTopic && (
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <p className="text-sm text-yellow-800">
+                    <Target className="w-4 h-4 inline mr-1" />
+                    Focus on {weakestTopic} to improve your overall score.
+                  </p>
+                </div>
+              )}
             </Card>
           </div>
 
@@ -231,6 +250,9 @@ export function StudentProgress() {
                       <Progress value={item.score} className="h-2" />
                     </div>
                   ))}
+                  {strengthsAndWeaknesses.strengths.length === 0 && (
+                    <p className="text-sm text-gray-500">Complete assignments to reveal your strengths.</p>
+                  )}
                 </div>
               </div>
               <div>
@@ -250,6 +272,9 @@ export function StudentProgress() {
                       <Progress value={item.score} className="h-2" />
                     </div>
                   ))}
+                  {strengthsAndWeaknesses.needsPractice.length === 0 && (
+                    <p className="text-sm text-gray-500">Your practice recommendations will appear after your first submissions.</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -265,19 +290,19 @@ export function StudentProgress() {
                   <PolarGrid />
                   <PolarAngleAxis dataKey="skill" />
                   <PolarRadiusAxis angle={90} domain={[0, 100]} />
-                  <Radar 
-                    name="Your Current Level" 
-                    dataKey="current" 
-                    stroke="#3b82f6" 
-                    fill="#3b82f6" 
-                    fillOpacity={0.6} 
+                  <Radar
+                    name="Your Current Level"
+                    dataKey="current"
+                    stroke="#3b82f6"
+                    fill="#3b82f6"
+                    fillOpacity={0.6}
                   />
-                  <Radar 
-                    name="Target Level" 
-                    dataKey="target" 
-                    stroke="#10b981" 
-                    fill="#10b981" 
-                    fillOpacity={0.3} 
+                  <Radar
+                    name="Target Level"
+                    dataKey="target"
+                    stroke="#10b981"
+                    fill="#10b981"
+                    fillOpacity={0.3}
                   />
                   <Legend />
                   <Tooltip />
@@ -314,7 +339,7 @@ export function StudentProgress() {
         </TabsContent>
 
         <TabsContent value="achievements" className="space-y-6 mt-6">
-          <Card className="p-6 bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200">
+          <Card className="p-6 bg-linear-to-r from-yellow-50 to-orange-50 border-yellow-200">
             <div className="flex items-center gap-3 mb-4">
               <Award className="w-8 h-8 text-yellow-600" />
               <div>
@@ -341,13 +366,13 @@ export function StudentProgress() {
               <div className="flex items-start gap-4 p-4 bg-gray-50 rounded-lg border-2 border-dashed border-gray-300">
                 <div className="text-4xl opacity-50">🎯</div>
                 <div className="flex-1">
-                  <h4 className="mb-1">Practice Champion</h4>
-                  <p className="text-sm text-gray-600 mb-2">Complete 10 practice sessions</p>
+                  <h4 className="mb-1">Submission Streak</h4>
+                  <p className="text-sm text-gray-600 mb-2">Submit {submissionTarget} assignments</p>
                   <div className="space-y-1">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">7 of 10 completed</span>
+                      <span className="text-gray-500">{Math.min(assignmentsDone, submissionTarget)} of {submissionTarget} completed</span>
                     </div>
-                    <Progress value={70} className="h-2" />
+                    <Progress value={submissionProgress} className="h-2" />
                   </div>
                 </div>
               </div>
@@ -356,12 +381,12 @@ export function StudentProgress() {
                 <div className="text-4xl opacity-50">📚</div>
                 <div className="flex-1">
                   <h4 className="mb-1">Topic Expert</h4>
-                  <p className="text-sm text-gray-600 mb-2">Master 3 topics (90%+ each)</p>
+                  <p className="text-sm text-gray-600 mb-2">Master {topicExpertTarget} topics (90%+ each)</p>
                   <div className="space-y-1">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-gray-500">1 of 3 mastered</span>
+                      <span className="text-gray-500">{Math.min(masteredTopics, topicExpertTarget)} of {topicExpertTarget} mastered</span>
                     </div>
-                    <Progress value={33} className="h-2" />
+                    <Progress value={topicExpertProgress} className="h-2" />
                   </div>
                 </div>
               </div>

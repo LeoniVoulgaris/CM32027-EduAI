@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -8,6 +8,7 @@ import { Progress } from "./ui/progress";
 import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Label } from "./ui/label";
 import { CheckCircle2, XCircle, Lightbulb, ArrowRight, ArrowLeft, Send, Clock, Sparkles } from "lucide-react";
+import { getAssignments, getAssignmentQuestions, submitAssignment } from "../lib/api";
 
 interface Question {
   id: string;
@@ -25,48 +26,78 @@ interface Question {
 export function StudentAssignmentView() {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [showHint, setShowHint] = useState(false);
-  const [questions, setQuestions] = useState<Question[]>([
-    {
-      id: "1",
-      question: "Solve for x: 2x² + 5x - 3 = 0",
-      type: "short-answer",
-      correctAnswer: "x = 0.5 or x = -3",
-      userAnswer: "",
-      isSubmitted: false,
-      hint: "Try using the quadratic formula: x = (-b ± √(b²-4ac)) / 2a",
-      feedback: ""
-    },
-    {
-      id: "2",
-      question: "Which of the following is the correct vertex form of a quadratic equation?",
-      type: "multiple-choice",
-      options: [
-        "y = ax² + bx + c",
-        "y = a(x - h)² + k",
-        "y = a(x + h)² + k",
-        "y = (x - h)(x - k)"
-      ],
-      correctAnswer: "y = a(x - h)² + k",
-      userAnswer: "",
-      isSubmitted: false,
-      hint: "The vertex form shows the vertex (h, k) of the parabola.",
-      feedback: ""
-    },
-    {
-      id: "3",
-      question: "A rectangle has a length that is 3 units more than twice its width. If the perimeter is 36 units, find the dimensions. Show your work.",
-      type: "free-response",
-      correctAnswer: "Width = 5 units, Length = 13 units",
-      userAnswer: "",
-      isSubmitted: false,
-      hint: "Let w = width. Then length = 2w + 3. Use the perimeter formula: 2(length + width) = 36",
-      feedback: ""
+  const [assignmentId, setAssignmentId] = useState<string | null>(null);
+  const [assignmentTitle, setAssignmentTitle] = useState("Loading assignment…");
+  const [submitted, setSubmitted] = useState(false);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function loadAssignment() {
+      try {
+        setLoading(true);
+        setLoadError(null);
+
+        const list = await getAssignments();
+        if (!Array.isArray(list) || list.length === 0) {
+          setLoadError("No published assignments are available yet.");
+          return;
+        }
+
+        let selectedAssignment: any = null;
+        let selectedQuestions: any[] = [];
+
+        for (const assignment of list) {
+          const qs = await getAssignmentQuestions(assignment.id);
+          if (Array.isArray(qs) && qs.length > 0) {
+            selectedAssignment = assignment;
+            selectedQuestions = qs;
+            break;
+          }
+        }
+
+        if (!selectedAssignment) {
+          setAssignmentTitle(list[0]?.title || "Assignment");
+          setLoadError("Assignments are available, but no questions have been published yet.");
+          return;
+        }
+
+        setAssignmentId(String(selectedAssignment.id));
+        setAssignmentTitle(selectedAssignment.title || "Assignment");
+        setQuestions(selectedQuestions.map((q: any) => ({
+          id: String(q.id),
+          question: q.question,
+          type: q.type || "short-answer",
+          options: q.options || undefined,
+          correctAnswer: q.correctAnswer || q.correct_answer || q.answer || "",
+          userAnswer: "",
+          isSubmitted: false,
+          hint: q.hint || "",
+          feedback: ""
+        })));
+      } catch {
+        setLoadError("Failed to load assignments. Please try again.");
+      } finally {
+        setLoading(false);
+      }
     }
-  ]);
+
+    loadAssignment();
+  }, []);
 
   const currentQ = questions[currentQuestion];
   const totalQuestions = questions.length;
   const answeredQuestions = questions.filter(q => q.userAnswer).length;
+
+  const handleFinalSubmit = async () => {
+    if (!assignmentId) return;
+    const answers = Object.fromEntries(
+      questions.map(q => [q.id, q.userAnswer || ""])
+    );
+    await submitAssignment(assignmentId, answers).catch(() => {});
+    setSubmitted(true);
+  };
 
   const handleAnswerChange = (value: string) => {
     const updatedQuestions = [...questions];
@@ -117,12 +148,19 @@ export function StudentAssignmentView() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      {loading && (
+        <Card className="p-12 text-center text-gray-500">Loading assignment…</Card>
+      )}
+      {!loading && loadError && (
+        <Card className="p-12 text-center text-gray-500">{loadError}</Card>
+      )}
+      {!loading && !loadError && questions.length > 0 && (<>
       {/* Header */}
       <Card className="p-6 bg-gradient-to-r from-blue-50 to-purple-50 border-blue-200">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-2xl mb-1">Quadratic Equations Practice</h2>
-            <p className="text-gray-600 text-sm">Personalized for Emma Chen • Math Grade 9A</p>
+            <h2 className="text-2xl mb-1">{assignmentTitle}</h2>
+            <p className="text-gray-600 text-sm">Personalized Practice • Math</p>
           </div>
           <Badge variant="outline" className="bg-purple-100 text-purple-800 border-purple-300">
             Personalized Assignment
@@ -252,7 +290,7 @@ export function StudentAssignmentView() {
                 </div>
               </div>
             </Card>
-            
+
             {/* Efficiency Callout */}
             {!currentQ.isCorrect && (
               <Card className="p-3 mb-4 bg-purple-50 border-purple-200">
@@ -321,9 +359,9 @@ export function StudentAssignmentView() {
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             ) : (
-              <Button className="bg-green-600 hover:bg-green-700">
+              <Button className="bg-green-600 hover:bg-green-700" onClick={handleFinalSubmit} disabled={submitted}>
                 <Send className="w-4 h-4 mr-2" />
-                Submit Assignment
+                {submitted ? "Submitted!" : "Submit Assignment"}
               </Button>
             )}
           </div>
@@ -342,6 +380,7 @@ export function StudentAssignmentView() {
           </div>
         </div>
       </Card>
+      </>)}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -9,6 +9,7 @@ import { Checkbox } from "./ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "./ui/collapsible";
 import { CheckCircle2, XCircle, Edit3, Eye, History, Sparkles, AlertTriangle, ChevronDown, Users, CheckSquare } from "lucide-react";
+import { getReviewItems, approveReviewItem, rejectReviewItem } from "../lib/api";
 
 interface ReviewItem {
   id: string;
@@ -29,58 +30,21 @@ export function ReviewQueue() {
   const [editedContent, setEditedContent] = useState<{ [key: string]: string }>({});
   const [quickEditMode, setQuickEditMode] = useState<{ [key: string]: boolean }>({});
   const [selectedItems, setSelectedItems] = useState<string[]>([]);
+  const [reviewItems, setReviewItems] = useState<ReviewItem[]>([]);
 
-  const reviewItems: ReviewItem[] = [
-    {
-      id: "1",
-      type: "question",
-      content: "A train travels 240 km in 3 hours. If it maintains the same speed, how far will it travel in 5 hours?",
-      context: "Grade 9 Math A - Proportional Relationships",
-      createdAt: "10 minutes ago",
-      status: "pending",
-      riskLevel: "low",
-      riskReasons: []
-    },
-    {
-      id: "2",
-      type: "feedback",
-      content: "Great work on identifying the vertex! However, remember to check your arithmetic when calculating the y-coordinate. Try substituting x = 2 back into the equation to verify your answer.",
-      context: "Emma Chen - Quadratic Functions Quiz",
-      createdAt: "25 minutes ago",
-      status: "pending",
-      riskLevel: "low",
-      riskReasons: []
-    },
-    {
-      id: "3",
-      type: "question",
-      content: "The Earth's atmosphere is composed primarily of nitrogen and oxygen. Explain why CO2, despite being a trace gas, has such a significant impact on climate change.",
-      context: "Grade 10 Science - Climate Topics",
-      createdAt: "45 minutes ago",
-      status: "pending",
-      riskLevel: "high",
-      riskReasons: ["Potential factual accuracy concerns", "Complex topic requiring expert verification", "May need additional context for grade level"]
-    },
-    {
-      id: "4",
-      type: "question",
-      content: "Solve the system of equations: 2x + y = 8 and x - y = 1",
-      context: "Grade 10 Algebra - Systems of Equations",
-      createdAt: "1 hour ago",
-      status: "pending",
-      riskLevel: "medium",
-      riskReasons: ["Similar to recently generated content", "May benefit from rewording for clarity"]
-    },
-    {
-      id: "5",
-      type: "lesson",
-      content: "Introduction to Quadratic Equations: A quadratic equation is a polynomial equation of degree 2, typically written in the form ax² + bx + c = 0...",
-      context: "Grade 9 Math B - New Unit",
-      createdAt: "2 hours ago",
-      status: "approved",
-      originalContent: "Introduction to Quadratic Equations: A quadratic equation is a polynomial equation of degree 2..."
-    }
-  ];
+  const approvedCount = reviewItems.filter(item => item.status === "approved" || item.status === "edited").length;
+  const rejectedCount = reviewItems.filter(item => item.status === "rejected").length;
+  const editedCount = reviewItems.filter(item => !!item.teacherEdits).length;
+  const decidedCount = approvedCount + rejectedCount;
+  const approvalRate = decidedCount > 0 ? Math.round((approvedCount / decidedCount) * 100) : 0;
+  const editRate = approvedCount > 0 ? Math.round((editedCount / approvedCount) * 100) : 0;
+  const rejectionRate = decidedCount > 0 ? Math.round((rejectedCount / decidedCount) * 100) : 0;
+
+  useEffect(() => {
+    getReviewItems()
+      .then(data => setReviewItems(data))
+      .catch(() => {});
+  }, []);
 
   // Sort items: high risk first, then medium, then low
   const sortedPendingItems = reviewItems
@@ -90,12 +54,15 @@ export function ReviewQueue() {
       return riskOrder[a.riskLevel || "low"] - riskOrder[b.riskLevel || "low"];
     });
 
-  const handleApprove = (id: string) => {
-    console.log(`Approved item ${id}`);
+  const handleApprove = async (id: string) => {
+    const edits = editedContent[id] || null;
+    await approveReviewItem(id, edits).catch(() => {});
+    setReviewItems(prev => prev.map(i => i.id === id ? { ...i, status: "approved" } : i));
   };
 
-  const handleReject = (id: string) => {
-    console.log(`Rejected item ${id}`);
+  const handleReject = async (id: string) => {
+    await rejectReviewItem(id).catch(() => {});
+    setReviewItems(prev => prev.map(i => i.id === id ? { ...i, status: "rejected" } : i));
   };
 
   const handleEdit = (id: string) => {
@@ -109,7 +76,7 @@ export function ReviewQueue() {
   const handleSaveEdit = (id: string) => {
     setEditMode({ ...editMode, [id]: false });
     setQuickEditMode({ ...quickEditMode, [id]: false });
-    console.log(`Saved edits for item ${id}:`, editedContent[id]);
+    handleApprove(id);
   };
 
   const handleQuickEdit = (id: string) => {
@@ -274,8 +241,8 @@ export function ReviewQueue() {
 
           {sortedPendingItems.map((item) => (
             <Card key={item.id} className={`p-5 border-l-4 ${
-              item.riskLevel === "high" 
-                ? "border-l-amber-500 bg-amber-50/30" 
+              item.riskLevel === "high"
+                ? "border-l-amber-500 bg-amber-50/30"
                 : item.riskLevel === "medium"
                 ? "border-l-blue-500"
                 : "border-l-purple-500"
@@ -473,23 +440,23 @@ export function ReviewQueue() {
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <CheckCircle2 className="w-4 h-4 text-green-600" />
-                  <span className="text-sm">Approved 15 items this week</span>
+                  <span className="text-sm">Approved {approvedCount} items</span>
                 </div>
-                <span className="text-sm text-gray-500">92% approval rate</span>
+                <span className="text-sm text-gray-500">{approvalRate}% approval rate</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <Edit3 className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm">Edited 8 items before approval</span>
+                  <span className="text-sm">Edited {editedCount} items before approval</span>
                 </div>
-                <span className="text-sm text-gray-500">53% edit rate</span>
+                <span className="text-sm text-gray-500">{editRate}% edit rate</span>
               </div>
               <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <XCircle className="w-4 h-4 text-red-600" />
-                  <span className="text-sm">Rejected 2 items</span>
+                  <span className="text-sm">Rejected {rejectedCount} items</span>
                 </div>
-                <span className="text-sm text-gray-500">8% rejection rate</span>
+                <span className="text-sm text-gray-500">{rejectionRate}% rejection rate</span>
               </div>
             </div>
           </Card>
